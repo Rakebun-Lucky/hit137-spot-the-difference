@@ -327,3 +327,132 @@ class SpotTheDifferenceApp:
     # ------------------------------------------------------------------
     # Commands (Tanzim)
     # ------------------------------------------------------------------
+
+def _cmd_load(self) -> None:
+        """Handle Load Image button."""
+        path = DialogHelper.ask_open_image()
+        if not path:
+            return   # user cancelled
+
+        try:
+            self._controller.load_image(path)
+        except ImageLoadError as exc:
+            DialogHelper.error("Image Load Error", str(exc))
+            return
+
+        # Refresh both panels
+        self._panel_orig.display(self._controller.display_original)
+        self._panel_mod.display(self._controller.display_modified)
+
+        # Enable reveal, enable click cursor
+        self._ctrl.set_reveal_enabled(True)
+        self._panel_mod.set_cursor("crosshair")
+        self._update_status()
+
+    def _cmd_click(self, x: int, y: int) -> None:
+        """Handle a click on the modified image panel."""
+        phase = self._controller.phase
+        if phase != GamePhase.PLAYING:
+            # Provide informative feedback instead of silently ignoring
+            if phase == GamePhase.LOCKED:
+                DialogHelper.warn(
+                    "Round Over",
+                    "You've used all 3 mistakes.\n"
+                    "Load a new image or press 'Reveal Differences'.",
+                )
+            elif phase == GamePhase.COMPLETED:
+                DialogHelper.info(
+                    "Round Complete",
+                    "You've already found all differences!\n"
+                    "Load a new image to keep playing.",
+                )
+            elif phase == GamePhase.REVEALED:
+                DialogHelper.info(
+                    "Differences Revealed",
+                    "Load a new image to start a new round.",
+                )
+            elif phase == GamePhase.WAITING:
+                DialogHelper.info("No Image", "Please load an image first.")
+            return
+
+        try:
+            result = self._controller.register_click(x, y)
+        except GameNotReadyError as exc:
+            DialogHelper.warn("Not Ready", str(exc))
+            return
+
+        # Refresh display images (circles may have been drawn)
+        self._panel_orig.display(self._controller.display_original)
+        self._panel_mod.display(self._controller.display_modified)
+        self._update_status()
+
+        # --- Feedback ---
+        if result.hit:
+            if result.completed:
+                DialogHelper.info(
+                    "🎉 All Found!",
+                    f"You found all 5 differences!\n"
+                    f"Mistakes this round: {result.mistakes}\n"
+                    f"Total differences found: {self._controller.state.total_found}\n\n"
+                    "Load a new image to keep playing.",
+                )
+                self._panel_mod.set_cursor("arrow")
+        else:
+            if result.locked:
+                DialogHelper.warn(
+                    "🔒 Too Many Mistakes",
+                    f"You've made 3 mistakes.\n"
+                    f"Differences found this round: {result.remaining} still remaining.\n\n"
+                    "Load a new image or press 'Reveal Differences'.",
+                )
+                self._panel_mod.set_cursor("arrow")
+
+    def _cmd_reveal(self) -> None:
+        """Handle Reveal Differences button."""
+        phase = self._controller.phase
+        if phase == GamePhase.WAITING:
+            DialogHelper.info("No Image", "Please load an image first.")
+            return
+
+        if phase in (GamePhase.COMPLETED,):
+            DialogHelper.info(
+                "Already Complete",
+                "You found all differences already!",
+            )
+            return
+
+        try:
+            revealed = self._controller.reveal()
+        except GameNotReadyError as exc:
+            DialogHelper.warn("Not Ready", str(exc))
+            return
+
+        # Refresh panels
+        self._panel_orig.display(self._controller.display_original)
+        self._panel_mod.display(self._controller.display_modified)
+        self._panel_mod.set_cursor("arrow")
+        self._update_status()
+
+        n = len(revealed)
+        DialogHelper.info(
+            "Differences Revealed",
+            f"{n} unfound difference{'s' if n != 1 else ''} marked in blue.\n"
+            "Load a new image to play again.",
+        )
+
+    # ------------------------------------------------------------------
+    # State change callback
+    # ------------------------------------------------------------------
+
+    def _on_state_change(self) -> None:
+        """Called by GameController whenever state changes."""
+        self._update_status()
+
+    def _update_status(self) -> None:
+        summary = self._controller.get_summary()
+        self._status.update(summary)
+
+        # Keep reveal button in sync
+        phase = self._controller.phase
+        reveal_active = phase in (GamePhase.PLAYING, GamePhase.LOCKED)
+        self._ctrl.set_reveal_enabled(reveal_active)
