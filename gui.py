@@ -323,12 +323,12 @@ class SpotTheDifferenceApp:
 
    
 
-   
+
     # ------------------------------------------------------------------
     # Commands (Tanzim)
     # ------------------------------------------------------------------
 
-def _cmd_load(self) -> None:
+    def _cmd_load(self) -> None:
         """Handle Load Image button."""
         path = DialogHelper.ask_open_image()
         if not path:
